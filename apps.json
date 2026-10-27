@@ -20,11 +20,24 @@
       "tintColor": "#2FD566",
       "category": "entertainment",
       "screenshots": [],
-      "versions": [],
+      "versions": [
+        {
+          "version": "0.1.1",
+          "buildVersion": "1",
+          "date": "2026-10-27",
+          "localizedDescription": "Build automatique.",
+          "downloadURL": "https://github.com/MXFia19/KickUnblock/releases/download/build-1/KickUnblock.ipa",
+          "size": 236157
+        }
+      ],
       "appPermissions": {
         "entitlements": [],
         "privacy": {}
-      }
+      },
+      "version": "0.1.1",
+      "versionDate": "2026-10-27",
+      "downloadURL": "https://github.com/MXFia19/KickUnblock/releases/download/build-1/KickUnblock.ipa",
+      "size": 236157
     }
   ],
   "news": []
