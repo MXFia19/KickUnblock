@@ -54,6 +54,13 @@ struct LiveCard: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
                             .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 4))
+                        if live.isMature == true {
+                            Text("18+")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 3)
+                                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 4))
+                        }
                     }
                     .padding(8)
                 }
@@ -66,11 +73,9 @@ struct LiveCard: View {
                     Text(live.channel?.user?.username ?? live.channel?.slug ?? "")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if let category = live.categories?.first?.name {
-                        Text(category)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    Text([live.categories?.first?.name, live.language].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -92,12 +97,14 @@ struct LivesList<Header: View>: View {
                     ErrorView(message: error) { Task { await model.reload() } }
                 }
                 ForEach(lives) { live in
-                    NavigationLink(value: Route.live(live.channel?.slug ?? "")) {
+                    let slug = live.channel?.slug ?? ""
+                    NavigationLink(value: Route.live(slug)) {
                         LiveCard(live: live)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu { channelMenu(slug) }
                     .onAppear {
-                        if live.id == lives.last?.id { Task { await model.loadMore() } }
+                        if live.id == model.lives.last?.id { Task { await model.loadMore() } }
                     }
                 }
                 if model.loading {
@@ -105,44 +112,97 @@ struct LivesList<Header: View>: View {
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom)
+            .padding(.bottom, 80)
         }
         .refreshable { await model.reload() }
     }
 }
 
+/// Chaîne ronde d'une rangée (suivies en direct, vues récemment).
+struct ChannelBubble: View {
+    let name: String
+    let avatar: URL?
+    var live = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Avatar(url: avatar, size: 58)
+                .overlay {
+                    if live { Circle().stroke(Theme.live, lineWidth: 2.5) }
+                }
+            Text(name)
+                .font(.caption2)
+                .lineLimit(1)
+                .frame(width: 70)
+        }
+    }
+}
+
 struct HomeView: View {
     @StateObject private var model = LivesModel(category: nil)
-    @State private var language: String?
+    @ObservedObject private var settings = Settings.shared
+    @ObservedObject private var follows = FollowsModel.shared
+    @ObservedObject private var history = History.shared
 
     private var languages: [String] {
         Array(Set(model.lives.compactMap(\.language))).sorted()
     }
 
     private var shown: [KLive] {
-        guard let language else { return model.lives }
-        return model.lives.filter { $0.language == language }
+        model.lives.filter { live in
+            (settings.homeLanguage == nil || live.language == settings.homeLanguage)
+                && !(settings.hideMature && live.isMature == true)
+        }
     }
+
+    private var liveFollows: [KChannel] { follows.channels.filter(\.isLive) }
 
     var body: some View {
         NavigationStack {
             LivesList(lives: shown, model: model) {
+                if !liveFollows.isEmpty {
+                    SectionTitle(text: L("Followed channels live"))
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(liveFollows, id: \.slug) { channel in
+                                NavigationLink(value: Route.live(channel.slug)) {
+                                    ChannelBubble(name: channel.name, avatar: channel.user?.avatar, live: true)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                if !history.channels.isEmpty {
+                    SectionTitle(text: L("Recently watched"))
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(history.channels, id: \.slug) { ref in
+                                NavigationLink(value: Route.channel(ref.slug)) {
+                                    ChannelBubble(name: ref.name, avatar: ref.avatarURL)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
                 if languages.count > 1 {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            chip("Toutes", selected: language == nil) { language = nil }
+                            chip(L("All"), selected: settings.homeLanguage == nil) { settings.homeLanguage = nil }
                             ForEach(languages, id: \.self) { name in
-                                chip(name, selected: language == name) { language = name }
+                                chip(name, selected: settings.homeLanguage == name) { settings.homeLanguage = name }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Directs")
+            .navigationTitle(L("Live"))
             .kickRoutes()
         }
         .task {
             if model.lives.isEmpty { await model.reload() }
+            if follows.channels.isEmpty && !Follows.shared.slugs.isEmpty { await follows.load(Follows.shared.slugs) }
         }
     }
 
@@ -162,6 +222,7 @@ struct HomeView: View {
 struct CategoryLivesView: View {
     let category: KCategory
     @StateObject private var model: LivesModel
+    @ObservedObject private var settings = Settings.shared
 
     init(category: KCategory) {
         self.category = category
@@ -169,11 +230,13 @@ struct CategoryLivesView: View {
     }
 
     var body: some View {
-        LivesList(lives: model.lives, model: model) { EmptyView() }
-            .navigationTitle(category.name)
-            .task {
-                if model.lives.isEmpty { await model.reload() }
-            }
+        LivesList(lives: model.lives.filter { !(settings.hideMature && $0.isMature == true) }, model: model) {
+            EmptyView()
+        }
+        .navigationTitle(category.name)
+        .task {
+            if model.lives.isEmpty { await model.reload() }
+        }
     }
 }
 
@@ -211,9 +274,34 @@ final class CategoriesModel: ObservableObject {
     }
 }
 
+struct CategoryTile: View {
+    let category: KCategory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Thumb(url: category.banner?.best)
+                .aspectRatio(3 / 4, contentMode: .fit)
+            Text(category.name)
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+            if let viewers = category.viewers {
+                Text(L("%@ viewers", Fmt.count(viewers)))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 struct CategoriesView: View {
     @StateObject private var model = CategoriesModel()
+    @State private var filter = ""
     private let columns = [GridItem(.adaptive(minimum: 105), spacing: 12)]
+
+    private var shown: [KCategory] {
+        let text = filter.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? model.categories : model.categories.filter { $0.name.localizedCaseInsensitiveContains(text) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -222,20 +310,9 @@ struct CategoriesView: View {
                     ErrorView(message: error) { Task { await model.reload() } }
                 }
                 LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(model.categories) { category in
+                    ForEach(shown) { category in
                         NavigationLink(value: Route.category(category)) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Thumb(url: category.banner?.best)
-                                    .aspectRatio(3 / 4, contentMode: .fit)
-                                Text(category.name)
-                                    .font(.caption.weight(.semibold))
-                                    .lineLimit(2)
-                                if let viewers = category.viewers {
-                                    Text("\(Fmt.count(viewers)) spectateurs")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                            CategoryTile(category: category)
                         }
                         .buttonStyle(.plain)
                         .onAppear {
@@ -247,9 +324,11 @@ struct CategoriesView: View {
                 if model.loading {
                     ProgressView().padding()
                 }
+                Color.clear.frame(height: 70)
             }
             .refreshable { await model.reload() }
-            .navigationTitle("Catégories")
+            .searchable(text: $filter, prompt: L("Filter categories"))
+            .navigationTitle(L("Browse"))
             .kickRoutes()
         }
         .task {
@@ -262,41 +341,63 @@ struct CategoriesView: View {
 
 struct SearchView: View {
     @State private var query = ""
-    @State private var results: [KSearchChannel] = []
+    @State private var channels: [KSearchChannel] = []
+    @State private var categories: [KCategory] = []
     @State private var error: String?
     @State private var loading = false
+    @State private var searched = false
 
     var body: some View {
         NavigationStack {
             List {
                 if let error {
                     Text(error).foregroundStyle(.secondary)
+                } else if searched && !loading && channels.isEmpty && categories.isEmpty {
+                    Text(L("No results.")).foregroundStyle(.secondary)
                 }
-                ForEach(results) { channel in
-                    NavigationLink(value: Route.channel(channel.slug)) {
-                        HStack(spacing: 12) {
-                            Avatar(url: channel.user?.avatar, size: 40)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(channel.user?.username ?? channel.slug)
-                                    .font(.body.weight(.semibold))
-                                if let followers = channel.followersCount {
-                                    Text("\(Fmt.count(followers.value)) abonnés")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                if !channels.isEmpty {
+                    Section(L("Channels")) {
+                        ForEach(channels) { channel in
+                            NavigationLink(value: Route.channel(channel.slug)) {
+                                HStack(spacing: 12) {
+                                    Avatar(url: channel.user?.avatar, size: 40)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(channel.user?.username ?? channel.slug)
+                                            .font(.body.weight(.semibold))
+                                        if let followers = channel.followersCount {
+                                            Text(L("%@ followers", Fmt.count(followers.value)))
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    if channel.isLive == true { LiveBadge() }
                                 }
                             }
-                            Spacer()
-                            if channel.isLive == true { LiveBadge() }
+                            .contextMenu { channelMenu(channel.slug) }
+                        }
+                    }
+                }
+                if !categories.isEmpty {
+                    Section(L("Categories")) {
+                        ForEach(categories) { category in
+                            NavigationLink(value: Route.category(category)) {
+                                HStack(spacing: 12) {
+                                    Thumb(url: category.banner?.best)
+                                        .frame(width: 36, height: 48)
+                                    Text(category.name).font(.body.weight(.semibold))
+                                }
+                            }
                         }
                     }
                 }
             }
             .listStyle(.plain)
             .overlay {
-                if loading && results.isEmpty { ProgressView() }
+                if loading && channels.isEmpty && categories.isEmpty { ProgressView() }
             }
-            .searchable(text: $query, prompt: "Chercher une chaîne")
-            .navigationTitle("Recherche")
+            .searchable(text: $query, prompt: L("Search channels and categories"))
+            .navigationTitle(L("Search"))
             .kickRoutes()
             .task(id: query) { await search() }
         }
@@ -305,8 +406,10 @@ struct SearchView: View {
     private func search() async {
         let text = query.trimmingCharacters(in: .whitespaces)
         guard text.count >= 2 else {
-            results = []
+            channels = []
+            categories = []
             error = nil
+            searched = false
             return
         }
         // Attente : une recherche par pause de frappe, pas une par lettre.
@@ -315,8 +418,11 @@ struct SearchView: View {
         loading = true
         defer { loading = false }
         do {
-            results = try await KickAPI.search(text).channels ?? []
+            let result = try await KickAPI.search(text)
+            channels = result.channels
+            categories = result.categories
             error = nil
+            searched = true
         } catch {
             if !Task.isCancelled { self.error = KickAPI.message(error) }
         }

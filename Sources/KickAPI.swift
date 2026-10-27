@@ -7,9 +7,9 @@ enum KickError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .refused: return "Kick refuse les requêtes de l'app (erreur 403)."
-        case .http(let code): return "Kick a répondu par une erreur (\(code))."
-        case .decoding: return "Réponse de Kick illisible."
+        case .refused: return L("Kick refused the app's requests (error 403).")
+        case .http(let code): return L("Kick returned an error (%d).", code)
+        case .decoding: return L("Kick's response could not be read.")
         }
     }
 }
@@ -62,7 +62,7 @@ enum KickAPI {
             URLQueryItem(name: "sort", value: "desc"),
         ]
         if let category { query.append(URLQueryItem(name: "subcategory", value: category)) }
-        return try await get("/stream/livestreams/fr", query: query)
+        return try await get("/stream/livestreams/en", query: query)
     }
 
     static func channel(_ slug: String) async throws -> KChannel {
@@ -70,11 +70,13 @@ enum KickAPI {
     }
 
     static func vods(_ slug: String) async throws -> [KVod] {
-        try await get("/api/v2/channels/\(segment(slug))/videos")
+        let list: LossyArray<KVod> = try await get("/api/v2/channels/\(segment(slug))/videos")
+        return list.items
     }
 
-    static func clips(_ slug: String, cursor: String?) async throws -> KClipsPage {
-        var query = [URLQueryItem(name: "sort", value: "view"), URLQueryItem(name: "time", value: "all")]
+    /// Clips d'une chaîne : `sort` view ou date, `time` day, week, month ou all.
+    static func clips(_ slug: String, sort: String, time: String, cursor: String?) async throws -> KClipsPage {
+        var query = [URLQueryItem(name: "sort", value: sort), URLQueryItem(name: "time", value: time)]
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
         return try await get("/api/v2/channels/\(segment(slug))/clips", query: query)
     }
@@ -98,8 +100,8 @@ enum KickAPI {
 
     /// Phrase pour l'utilisateur.
     static func message(_ error: Error) -> String {
-        if let e = error as? KickError { return e.errorDescription ?? "Erreur." }
-        if let e = error as? URLError, e.code == .notConnectedToInternet { return "Pas de connexion Internet." }
-        return "Kick ne répond pas : \(error.localizedDescription)"
+        if let e = error as? KickError { return e.errorDescription ?? L("Error.") }
+        if let e = error as? URLError, e.code == .notConnectedToInternet { return L("No internet connection.") }
+        return L("Kick is not responding: %@", error.localizedDescription)
     }
 }

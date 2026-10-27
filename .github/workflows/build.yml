@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # historique et tags : notes depuis le build précédent
 
       - name: Version
         id: vars
@@ -40,6 +42,16 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=build-${{ github.run_number }}" >> $GITHUB_OUTPUT
           echo "date=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: Changelog since previous build
+        run: |
+          # Lignes « Changelog: … » des commits depuis le build précédent
+          # (en anglais, comme pour TwitchUnblock).
+          PREV=$(git describe --tags --abbrev=0 --match 'build-*' HEAD 2>/dev/null || true)
+          if [ -n "$PREV" ]; then RANGE="$PREV..HEAD"; else RANGE="-n 20"; fi
+          git log $RANGE --no-merges --format=%b | sed -n 's/^[Cc]hangelog: *\(.*\)$/- \1/p' | awk '!seen[$0]++' | head -60 > changelog.md
+          [ -s changelog.md ] || echo "- Improvements and fixes" > changelog.md
+          cat changelog.md
 
       - name: Set version
         run: |
@@ -66,9 +78,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          { echo "Automatic build of \`main\` on ${{ steps.vars.outputs.date }}."; echo; cat changelog.md; } > release-notes.md
           gh release create "${{ steps.vars.outputs.tag }}" build/KickUnblock.ipa \
             --title "KickUnblock ${{ steps.vars.outputs.version }}" \
-            --notes "Build automatique de main du ${{ steps.vars.outputs.date }}."
+            --notes-file release-notes.md
 
       - name: Update source (apps.json)
         env:
@@ -83,7 +96,8 @@ jobs:
           d = json.load(open('apps.json'))
           a = d['apps'][0]
           entry = {'version': os.environ['VERSION'], 'buildVersion': os.environ['BUILD'], 'date': os.environ['DATE'],
-                   'localizedDescription': 'Build automatique.', 'downloadURL': os.environ['URL'], 'size': int(os.environ['IPA_SIZE'])}
+                   'localizedDescription': open('changelog.md').read().strip(), 'downloadURL': os.environ['URL'],
+                   'size': int(os.environ['IPA_SIZE'])}
           a['versions'] = [entry] + [v for v in a.get('versions', []) if v.get('buildVersion') != entry['buildVersion']][:19]
           a.update(version=entry['version'], versionDate=entry['date'], downloadURL=entry['downloadURL'], size=entry['size'])
           json.dump(d, open('apps.json', 'w'), indent=2, ensure_ascii=False)

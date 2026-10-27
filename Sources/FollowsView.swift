@@ -1,7 +1,9 @@
 import SwiftUI
 
+/// Chaînes suivies relues sur Kick (accueil et onglet Suivis).
 @MainActor
 final class FollowsModel: ObservableObject {
+    static let shared = FollowsModel()
     @Published private(set) var channels: [KChannel] = []
     @Published private(set) var loading = false
 
@@ -30,24 +32,23 @@ final class FollowsModel: ObservableObject {
 }
 
 struct FollowsView: View {
-    @StateObject private var model = FollowsModel()
+    @ObservedObject private var model = FollowsModel.shared
     @ObservedObject private var follows = Follows.shared
-
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-    }
 
     var body: some View {
         NavigationStack {
             List {
                 if follows.slugs.isEmpty {
-                    Text("Aucune chaîne suivie. Touche le cœur sur la page d'une chaîne pour la retrouver ici.")
+                    Text(L("No followed channels yet. Tap the heart on a channel page to see it here."))
                         .foregroundStyle(.secondary)
                 }
                 ForEach(model.channels.filter { follows.isFollowed($0.slug) }, id: \.slug) { channel in
                     NavigationLink(value: channel.isLive ? Route.live(channel.slug) : Route.channel(channel.slug)) {
                         HStack(spacing: 12) {
                             Avatar(url: channel.user?.avatar, size: 44)
+                                .overlay {
+                                    if channel.isLive { Circle().stroke(Theme.live, lineWidth: 2) }
+                                }
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(channel.name).font(.body.weight(.semibold))
                                 if channel.isLive, let live = channel.livestream {
@@ -55,30 +56,29 @@ struct FollowsView: View {
                                         .font(.caption)
                                         .lineLimit(1)
                                         .foregroundStyle(.secondary)
-                                    Text("\(Fmt.count(live.viewerCount)) spectateurs")
+                                    Text([live.categories?.first?.name, L("%@ viewers", Fmt.count(live.viewerCount))]
+                                        .compactMap { $0 }.joined(separator: " · "))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 } else {
-                                    Text("Hors ligne").font(.caption).foregroundStyle(.secondary)
+                                    Text(L("Offline")).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             Spacer()
                             if channel.isLive { LiveBadge() }
                         }
                     }
+                    .contextMenu { channelMenu(channel.slug) }
                     .swipeActions {
-                        Button("Ne plus suivre", role: .destructive) { follows.toggle(channel.slug) }
+                        Button(L("Unfollow"), role: .destructive) { follows.toggle(channel.slug) }
                     }
-                }
-                Section {
-                    Text("KickUnblock \(version)").font(.caption).foregroundStyle(.secondary)
                 }
             }
             .overlay {
                 if model.loading && model.channels.isEmpty && !follows.slugs.isEmpty { ProgressView() }
             }
             .refreshable { await model.load(follows.slugs) }
-            .navigationTitle("Suivis")
+            .navigationTitle(L("Following"))
             .kickRoutes()
             .task(id: follows.slugs) { await model.load(follows.slugs) }
         }

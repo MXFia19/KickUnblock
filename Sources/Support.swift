@@ -16,12 +16,21 @@ extension Color {
 }
 
 enum Fmt {
+    /// 1 234 → « 1.2K » (anglais) ou « 1,2 k » (français).
     static func count(_ n: Int?) -> String {
         guard let n else { return "" }
-        if n >= 1_000_000 { return String(format: "%.1f M", Double(n) / 1_000_000) }
-        if n >= 10_000 { return String(format: "%.0f k", Double(n) / 1_000) }
-        if n >= 1_000 { return String(format: "%.1f k", Double(n) / 1_000) }
-        return "\(n)"
+        let french = Settings.shared.isFrench
+        let text: String
+        if n >= 1_000_000 {
+            text = String(format: "%.1f", Double(n) / 1_000_000) + (french ? " M" : "M")
+        } else if n >= 10_000 {
+            text = String(format: "%.0f", Double(n) / 1_000) + (french ? " k" : "K")
+        } else if n >= 1_000 {
+            text = String(format: "%.1f", Double(n) / 1_000) + (french ? " k" : "K")
+        } else {
+            text = "\(n)"
+        }
+        return french ? text.replacingOccurrences(of: ".", with: ",") : text
     }
 
     static func clock(_ seconds: Int) -> String {
@@ -32,28 +41,17 @@ enum Fmt {
     static func relative(_ date: Date?) -> String {
         guard let date else { return "" }
         let f = RelativeDateTimeFormatter()
-        f.locale = Locale(identifier: "fr_FR")
+        f.locale = Settings.shared.locale
         f.unitsStyle = .short
         return f.localizedString(for: date, relativeTo: Date())
     }
-}
 
-/// Chaînes suivies, gardées sur l'appareil (pseudos en minuscules).
-final class Follows: ObservableObject {
-    static let shared = Follows()
-    private let key = "follows"
-    @Published private(set) var slugs: [String]
-
-    init() {
-        slugs = UserDefaults.standard.stringArray(forKey: key) ?? []
-    }
-
-    func isFollowed(_ slug: String) -> Bool { slugs.contains(slug.lowercased()) }
-
-    func toggle(_ slug: String) {
-        let s = slug.lowercased()
-        if let i = slugs.firstIndex(of: s) { slugs.remove(at: i) } else { slugs.insert(s, at: 0) }
-        UserDefaults.standard.set(slugs, forKey: key)
+    static func time(_ date: Date?) -> String {
+        guard let date else { return "" }
+        let f = DateFormatter()
+        f.locale = Settings.shared.locale
+        f.timeStyle = .short
+        return f.string(from: date)
     }
 }
 
@@ -98,7 +96,7 @@ struct Avatar: View {
 
 struct LiveBadge: View {
     var body: some View {
-        Text("EN DIRECT")
+        Text(L("LIVE"))
             .font(.caption2.weight(.bold))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
@@ -121,11 +119,22 @@ struct ErrorView: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             if let retry {
-                Button("Réessayer", action: retry).buttonStyle(.bordered)
+                Button(L("Retry"), action: retry).buttonStyle(.bordered)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
+    }
+}
+
+/// Titre d'une rangée de l'accueil.
+struct SectionTitle: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.headline)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -168,6 +177,25 @@ struct FlowLayout: Layout {
             view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
             x += s.width + spacing
             line = max(line, s.height)
+        }
+    }
+}
+
+/// Lien d'un réseau social de la page « À propos » (pseudo ou adresse).
+enum Social {
+    static func url(_ kind: String, _ value: String?) -> URL? {
+        guard let raw = value?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
+        if raw.lowercased().hasPrefix("http") { return URL(string: raw) }
+        let handle = raw.hasPrefix("@") ? String(raw.dropFirst()) : raw
+        let encoded = handle.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? handle
+        switch kind {
+        case "twitter": return URL(string: "https://x.com/\(encoded)")
+        case "instagram": return URL(string: "https://instagram.com/\(encoded)")
+        case "youtube": return URL(string: "https://www.youtube.com/@\(encoded)")
+        case "tiktok": return URL(string: "https://www.tiktok.com/@\(encoded)")
+        case "discord": return URL(string: "https://discord.gg/\(encoded)")
+        case "facebook": return URL(string: "https://facebook.com/\(encoded)")
+        default: return nil
         }
     }
 }
