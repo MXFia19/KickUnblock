@@ -22,6 +22,14 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "0.1.2",
+          "buildVersion": "2",
+          "date": "2026-10-27",
+          "localizedDescription": "- English is now the main language, with French when the iPhone is in French (or chosen in Settings)\n- Multi-view: watch up to 4 lives side by side, tap one to hear it\n- Landscape player with the chat on the side\n- Picture in Picture keeps playing when you leave the player\n- Live viewers and title refreshed every minute, live duration, and a notice when the stream ends\n- Sleep timer and maximum video quality\n- VODs resume where you stopped, with their progress on the channel page\n- Chat badges, replies, optional timestamps, text size, a \"Latest messages\" button, and a button to hide the chat\n- Home shows your followed channels that are live and the channels you watched recently; language and 18+ filters\n- Channel page: banner, About tab (bio, socials, recent categories) and clip sorting\n- Search also finds categories; the category list can be filtered\n- Long-press a live to follow it, add it to multi-view, share it or open it on kick.com\n- Notifications when a followed channel goes live (checked in the background when iOS allows it)\n- New Settings tab",
+          "downloadURL": "https://github.com/MXFia19/KickUnblock/releases/download/build-2/KickUnblock.ipa",
+          "size": 371078
+        },
+        {
           "version": "0.1.1",
           "buildVersion": "1",
           "date": "2026-10-27",
@@ -34,10 +42,10 @@
         "entitlements": [],
         "privacy": {}
       },
-      "version": "0.1.1",
+      "version": "0.1.2",
       "versionDate": "2026-10-27",
-      "downloadURL": "https://github.com/MXFia19/KickUnblock/releases/download/build-1/KickUnblock.ipa",
-      "size": 236157
+      "downloadURL": "https://github.com/MXFia19/KickUnblock/releases/download/build-2/KickUnblock.ipa",
+      "size": 371078
     }
   ],
   "news": []
