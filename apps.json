@@ -1,0 +1,31 @@
+{
+  "name": "KickUnblock",
+  "identifier": "com.mxfia19.KickUnblock.source",
+  "subtitle": "Les directs, VODs et clips de Kick",
+  "description": "Source de KickUnblock : chaque build de la branche main.",
+  "iconURL": "https://raw.githubusercontent.com/MXFia19/KickUnblock/main/assets/icon.png",
+  "website": "https://github.com/MXFia19/KickUnblock",
+  "tintColor": "#2FD566",
+  "featuredApps": [
+    "com.mxfia19.KickUnblock"
+  ],
+  "apps": [
+    {
+      "name": "KickUnblock",
+      "bundleIdentifier": "com.mxfia19.KickUnblock",
+      "developerName": "MXFia19",
+      "subtitle": "Les directs, VODs et clips de Kick",
+      "localizedDescription": "Regarder les directs de Kick avec le chat, les VODs et les clips des chaînes, chercher une chaîne, parcourir les catégories et suivre ses chaînes.",
+      "iconURL": "https://raw.githubusercontent.com/MXFia19/KickUnblock/main/assets/icon.png",
+      "tintColor": "#2FD566",
+      "category": "entertainment",
+      "screenshots": [],
+      "versions": [],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}

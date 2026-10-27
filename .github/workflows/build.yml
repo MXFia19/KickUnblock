@@ -1,0 +1,96 @@
+name: Build IPA
+
+# Comme pour TwitchUnblock : chaque push sur main qui touche l'app fait une
+# IPA non signée, publiée en release et ajoutée à la source apps.json
+# (AltStore, SideStore, Feather).
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Sources/**'
+      - 'Info.plist'
+      - 'project.yml'
+      - 'VERSION'
+      - 'buildipa.sh'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Version
+        id: vars
+        run: |
+          BASE=$(tr -d ' \n\r' < VERSION 2>/dev/null || echo "0.1")
+          VERSION="$BASE.${{ github.run_number }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=build-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          echo "date=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: Set version
+        run: |
+          plutil -replace CFBundleShortVersionString -string "${{ steps.vars.outputs.version }}" Info.plist
+          plutil -replace CFBundleVersion -string "${{ github.run_number }}" Info.plist
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec project.yml
+
+      - name: Build IPA
+        run: |
+          chmod +x ./buildipa.sh
+          ./buildipa.sh
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KickUnblock-IPA
+          path: build/KickUnblock.ipa
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.vars.outputs.tag }}" build/KickUnblock.ipa \
+            --title "KickUnblock ${{ steps.vars.outputs.version }}" \
+            --notes "Build automatique de main du ${{ steps.vars.outputs.date }}."
+
+      - name: Update source (apps.json)
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+          BUILD: ${{ github.run_number }}
+          DATE: ${{ steps.vars.outputs.date }}
+          URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.vars.outputs.tag }}/KickUnblock.ipa
+        run: |
+          IPA_SIZE=$(stat -f%z build/KickUnblock.ipa)
+          IPA_SIZE=$IPA_SIZE python3 - <<'PY'
+          import json, os
+          d = json.load(open('apps.json'))
+          a = d['apps'][0]
+          entry = {'version': os.environ['VERSION'], 'buildVersion': os.environ['BUILD'], 'date': os.environ['DATE'],
+                   'localizedDescription': 'Build automatique.', 'downloadURL': os.environ['URL'], 'size': int(os.environ['IPA_SIZE'])}
+          a['versions'] = [entry] + [v for v in a.get('versions', []) if v.get('buildVersion') != entry['buildVersion']][:19]
+          a.update(version=entry['version'], versionDate=entry['date'], downloadURL=entry['downloadURL'], size=entry['size'])
+          json.dump(d, open('apps.json', 'w'), indent=2, ensure_ascii=False)
+          open('apps.json', 'a').write('\n')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps.json
+          git commit -m "chore: source ${{ steps.vars.outputs.version }} [skip ci]"
+          git push
